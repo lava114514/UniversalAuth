@@ -2,6 +2,7 @@ package ax.nd.faceunlock.service
 
 import android.accessibilityservice.AccessibilityService
 import android.animation.Animator
+import android.app.ActivityManager
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -206,7 +207,52 @@ class LockscreenFaceAuthService : AccessibilityService(), FaceAuthServiceCallbac
         }
     }
 
+    /**
+     * 检测当前前台运行的应用是否为相机类应用。
+     * 如果前台是相机应用，面容解锁应退让相机硬件，避免冲突。
+     *
+     * @return true 表示前台是相机应用，面容解锁应跳过
+     */
+    private fun isCameraAppInForeground(): Boolean {
+        try {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return false
+            // 获取前台运行的 Activity 信息（仅需最顶层的 1 个）
+            val tasks = am.getRunningTasks(1)
+            if (tasks.isNullOrEmpty()) return false
+
+            val topActivity = tasks[0]?.topActivity ?: return false
+            val packageName = topActivity.packageName ?: return false
+
+            // 精确匹配索尼摄影大师（Photography Pro）
+            if (packageName == "com.sonymobile.photopro") {
+                Log.d(TAG, "Sony Photography Pro is in foreground, yielding camera hardware")
+                return true
+            }
+
+            // 通用相机包名特征检测：包名包含 .camera 或 .photopro
+            if (packageName.contains(".camera") || packageName.contains(".photopro")) {
+                Log.d(TAG, "Camera app ($packageName) is in foreground, yielding camera hardware")
+                return true
+            }
+
+            return false
+        } catch (e: Exception) {
+            // 如果获取失败（如权限不足），静默放行，不阻塞面容解锁
+            Log.w(TAG, "Failed to check foreground app, proceeding with face auth", e)
+            return false
+        }
+    }
+
     private fun show() {
+        // ============================================================
+        // 硬件互斥检测：如果相机类应用正在前台运行，则跳过面容解锁
+        // 避免与相机应用竞争 Camera HAL 硬件导致后者启动失败
+        // ============================================================
+        if (isCameraAppInForeground()) {
+            Log.d(TAG, "Camera app detected in foreground, skipping face auth initialization")
+            return
+        }
+
         if(!active) {
             if(Util.isFaceUnlockEnrolled(this)) {
                 active = true
