@@ -24,4 +24,6 @@ include ':faceunlock-framework_stub'
 include ':libuniversalauth'
 include ':libuniversalauth-xposed'
 include ':universalauth-xposed'
+include ':xposedutil'
+project(':xposedutil').projectDir = new File(rootDir, 'xposedutil/library')
 //includeBuild 'gplayapi'
